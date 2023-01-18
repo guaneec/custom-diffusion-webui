@@ -42,6 +42,8 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
     shared.state.job_count = steps
 
     filename = os.path.join(shared.cmd_opts.embeddings_dir, f'{embedding_name}.pt')
+    os.makedirs(shared.cmd_opts.deltas_dir, exist_ok=True)
+    kv_filename = os.path.join(shared.cmd_opts.deltas_dir, f'{embedding_name}.delta.safetensors')
 
     log_directory = os.path.join(log_directory, datetime.datetime.now().strftime("%Y-%m-%d"), embedding_name)
     unload = shared.opts.unload_models_when_training
@@ -140,6 +142,7 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
     _loss_step = 0 #internal
 
     last_saved_file = "<none>"
+    last_saved_delta = "<none>"
     last_saved_image = "<none>"
     forced_filename = "<none>"
     embedding_yet_to_be_embedded = False
@@ -211,9 +214,10 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
                     # Before saving, change name to match current checkpoint.
                     embedding_name_every = f'{embedding_name}-{steps_done}'
                     last_saved_file = os.path.join(embedding_dir, f'{embedding_name_every}.pt')
+                    last_saved_delta = os.path.join(embedding_dir, f'{embedding_name_every}.delta.safetensors')
                     save_embedding(embedding, optimizer, checkpoint, embedding_name_every, last_saved_file, remove_cached_checksum=True)
                     embedding_yet_to_be_embedded = True
-                    save_deltas(kvs, kvs_bak, os.path.join(embedding_dir, f'{embedding_name_every}.delta.safetensors'))
+                    save_deltas(kvs, kvs_bak, last_saved_delta)
 
                 write_loss(log_directory, "textual_inversion_loss.csv", embedding.step, steps_per_epoch, {
                     "loss": f"{loss_step:.7f}",
@@ -302,11 +306,13 @@ Loss: {loss_step:.7f}<br/>
 Step: {steps_done}<br/>
 Last prompt: {html.escape(batch.cond_text[0])}<br/>
 Last saved embedding: {html.escape(last_saved_file)}<br/>
+Last saved delta weights: {html.escape(last_saved_delta)}<br/>
 Last saved image: {html.escape(last_saved_image)}<br/>
 </p>
 """
         filename = os.path.join(shared.cmd_opts.embeddings_dir, f'{embedding_name}.pt')
         save_embedding(embedding, optimizer, checkpoint, embedding_name, filename, remove_cached_checksum=True)
+        save_deltas(kvs, kvs_bak, kv_filename)
     except Exception:
         print(traceback.format_exc(), file=sys.stderr)
         pass
