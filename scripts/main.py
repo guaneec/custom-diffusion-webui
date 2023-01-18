@@ -104,9 +104,6 @@ def get_textual_inversion_template_names():
 
 def train_tabs_callback(ui_train_tab_params):
     with gr.Tab(label="Train Custom Diffusion"):
-        gr.HTML(
-            value='<p style=\'margin-bottom: 0.7em\'>Train an embedding or Hypernetwork; you must specify a directory with a set of 1:1 ratio images <a href="https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion" style="font-weight:bold;">[wiki]</a></p>'
-        )
         with FormRow():
             train_embedding_name = gr.Dropdown(
                 label="Embedding",
