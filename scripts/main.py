@@ -10,22 +10,23 @@ import os
 from modules import shared, sd_hijack
 from modules.textual_inversion import textual_inversion
 from modules.call_queue import wrap_gradio_gpu_call
-from safetensors.torch import load_file
+from safetensors import safe_open
 import cd_modules
 import torch
 from math import prod
 import modules
 import cd_modules.custom_diffusion
+import json
 
-pluggables = {}
+deltas = {}
 backup = {}
 
 
-def list_pluggables():
+def list_deltas():
     res = {}
     for filename in sorted(
         glob.iglob(
-            os.path.join(models_path, "pluggables", "**/*.safetensors"), recursive=True
+            os.path.join(models_path, "deltas", "**/*.safetensors"), recursive=True
         )
     ):
         name = os.path.splitext(os.path.basename(filename))[0]
@@ -34,30 +35,37 @@ def list_pluggables():
     return res
 
 
-last_model_hash, last_pluggable_name = None, None
+last_model_hash, last_delta_name = None, None
 
 
-def apply(pluggable_name, model):
-    global backup, last_model_hash, last_pluggable_name
-    if (last_model_hash, last_pluggable_name) == (model.sd_model_hash, pluggable_name):
+def apply(delta_name, model):
+    global backup, last_model_hash, last_delta_name
+    if (last_model_hash, last_delta_name) == (model.sd_model_hash, delta_name):
         return
     if last_model_hash != model.sd_model_hash:
         backup = {}
-    d = load_file(pluggables[pluggable_name]) if pluggable_name != "None" else {}
-    print(f"loaded weights ({sum(prod(p.shape) for p in d.values())} params)")
-    for k, v in model.model.named_parameters():
-        if k in d and k not in backup:
+    if delta_name != 'None':
+        st = safe_open(deltas[delta_name], 'pt')
+        metadata = json.loads(st.metadata()['json'])
+        print(metadata['meta'])
+        entries = metadata['entries']
+        print(f"loaded weights {delta_name} ({sum(prod(st.get_tensor(k).shape) for k in st.keys())} params in {len(entries)} entries)")
+    else:
+        entries = {}
+    
+    for k, v in model.named_parameters():
+        if k in entries and k not in backup:
             backup[k] = v.detach().clone()
-        if k in d:
+        if k in entries:
             with torch.no_grad():
-                v[:] = d[k]
-            print(f"loaded {k} from {pluggable_name}")
+                v[:] = st.get_tensor(k).to(model.device) + backup[k]
+            print(f"loaded {k} from {delta_name}")
         elif k in backup:
             with torch.no_grad():
                 v[:] = backup[k]
             del backup[k]
             print(f"restored {k}")
-    last_model_hash, last_pluggable_name = model.sd_model_hash, pluggable_name
+    last_model_hash, last_delta_name = model.sd_model_hash, delta_name
 
 
 class Script(scripts.Script):
@@ -69,25 +77,25 @@ class Script(scripts.Script):
 
     def ui(self, is_img2img):
         with gr.Row():
-            pluggable_name = gr.Dropdown(
-                ["None", *pluggables.keys()], label="Pluggable weights", value="None"
+            delta_name = gr.Dropdown(
+                ["None", *deltas.keys()], label="Tuned weights", value="None"
             )
 
             def refresh():
-                global pluggables
-                pluggables = list_pluggables()
+                global deltas
+                deltas = list_deltas()
 
             refresh()
             refresh = create_refresh_button(
-                pluggable_name,
+                delta_name,
                 refresh,
-                (lambda: dict(choices=["None", *pluggables.keys()])),
+                (lambda: dict(choices=["None", *deltas.keys()])),
                 "plug_refresh",
             )
-        return [pluggable_name, refresh]
+        return [delta_name, refresh]
 
-    def process(self, p, pluggable_name, _refresh):
-        apply(pluggable_name, p.sd_model)
+    def process(self, p, delta_name, _refresh):
+        apply(delta_name, p.sd_model)
 
 
 def get_textual_inversion_template_names():
