@@ -15,7 +15,7 @@ import cd_modules
 import torch
 from math import prod
 import modules
-import cd_modules.texual_inversion
+import cd_modules.custom_diffusion
 
 pluggables = {}
 backup = {}
@@ -258,7 +258,7 @@ def train_tabs_callback(ui_train_tab_params):
             ti_outcome = gr.HTML(value="")
 
     train_embedding.click(
-        fn=wrap_gradio_gpu_call(cd_modules.texual_inversion.train_embedding, extra_outputs=[gr.update()]),
+        fn=wrap_gradio_gpu_call(cd_modules.custom_diffusion.train_embedding, extra_outputs=[gr.update()]),
         _js="start_training_textual_inversion",
         inputs=[
             dummy_component,
