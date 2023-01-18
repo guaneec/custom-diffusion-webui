@@ -1,4 +1,5 @@
 from modules.textual_inversion.textual_inversion import *
+from safetensors.torch import save_file
 
 def train_embedding(*args):
     assert not shared.cmd_opts.lowvram, 'Training models with lowvram not possible'
@@ -21,7 +22,7 @@ Embedding saved to {html.escape(filename)}
         if not apply_optimizations:
             sd_hijack.apply_optimizations()
 
-def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_step, data_root, log_directory, training_width, training_height, varsize, steps, clip_grad_mode, clip_grad_value, shuffle_tags, tag_drop_out, latent_sampling_method, create_image_every, save_embedding_every, template_filename, save_image_with_stored_embedding, preview_from_txt2img, preview_prompt, preview_negative_prompt, preview_steps, preview_sampler_index, preview_cfg_scale, preview_seed, preview_width, preview_height):
+def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_step, data_root, log_directory, training_width, training_height, varsize, steps, clip_grad_mode, clip_grad_value, shuffle_tags, tag_drop_out, latent_sampling_method, create_image_every, save_embedding_every, template_filename, save_image_with_stored_embedding, preview_from_txt2img, kv_learn_rate, preview_prompt, preview_negative_prompt, preview_steps, preview_sampler_index, preview_cfg_scale, preview_seed, preview_width, preview_height):
     save_embedding_every = save_embedding_every or 0
     create_image_every = create_image_every or 0
     template_file = textual_inversion_templates.get(template_filename, None)
@@ -66,6 +67,7 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
         return embedding, filename
     
     scheduler = LearnRateScheduler(learn_rate, steps, initial_step)
+    kv_scheduler = LearnRateScheduler(kv_learn_rate, steps, initial_step)
     clip_grad = torch.nn.utils.clip_grad_value_ if clip_grad_mode == "value" else \
         torch.nn.utils.clip_grad_norm_ if clip_grad_mode == "norm" else \
         None
@@ -74,7 +76,7 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
     # dataset loading may take a while, so input validations and early returns should be done before this
     shared.state.textinfo = f"Preparing dataset from {html.escape(data_root)}..."
     old_parallel_processing_allowed = shared.parallel_processing_allowed
-    
+
     if shared.opts.training_enable_tensorboard:
         tensorboard_writer = tensorboard_setup(log_directory)
 
@@ -94,7 +96,11 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
         shared.sd_model.first_stage_model.to(devices.cpu)
 
     embedding.vec.requires_grad = True
-    optimizer = torch.optim.AdamW([embedding.vec], lr=scheduler.learn_rate, weight_decay=0.0)
+    kvs = {n: p for n, p in shared.sd_model.model.named_parameters() if '2.to_k' in n or '2.to_v' in n}
+    optimizer = torch.optim.AdamW([
+        {'params': embedding.vec, 'lr': scheduler.learn_rate},
+        {'params': kvs.values(), 'lr': kv_scheduler.learn_rate},
+    ], weight_decay=0.0, eps=1e-5)
     if shared.opts.save_optimizer_state:
         optimizer_state_dict = None
         if os.path.exists(filename + '.optim'):
@@ -109,6 +115,11 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
             print("No saved optimizer exists in checkpoint")
 
     scaler = torch.cuda.amp.GradScaler()
+
+    # force allow_fp16 because pytorch doesn't like scaling fp16
+    scaler._unscale_grads_bak = scaler._unscale_grads_
+    scaler._unscale_grads_ = (lambda optimizer, inv_scale, found_inf, allow_fp16: 
+                             scaler._unscale_grads_bak(optimizer, inv_scale, found_inf, True))
 
     batch_size = ds.batch_size
     gradient_step = ds.gradient_step
@@ -137,7 +148,7 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
                 # works as a drop_last=True for gradient accumulation
                 if j == max_steps_per_epoch:
                     break
-                scheduler.apply(optimizer, embedding.step)
+                # scheduler.apply(optimizer, embedding.step)
                 if scheduler.finished:
                     break
                 if shared.state.interrupted:
@@ -192,6 +203,7 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
                     last_saved_file = os.path.join(embedding_dir, f'{embedding_name_every}.pt')
                     save_embedding(embedding, optimizer, checkpoint, embedding_name_every, last_saved_file, remove_cached_checksum=True)
                     embedding_yet_to_be_embedded = True
+                    save_file(kvs, os.path.join(embedding_dir, f'{embedding_name_every}.kv.safetensors'))
 
                 write_loss(log_directory, "textual_inversion_loss.csv", embedding.step, steps_per_epoch, {
                     "loss": f"{loss_step:.7f}",
