@@ -109,10 +109,8 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
     kvs = {n: p for n, p in shared.sd_model.named_parameters() if '2.to_k' in n or '2.to_v' in n}
     kvs_bak = {n: p.detach().clone() for n, p in kvs.items()}
 
-    optimizer = torch.optim.AdamW([
-        {'params': embedding.vec, 'lr': scheduler.learn_rate},
-        {'params': kvs.values(), 'lr': kv_scheduler.learn_rate},
-    ], weight_decay=0.0, eps=1e-5)
+    optimizer = torch.optim.AdamW([embedding.vec], lr=scheduler.learn_rate, weight_decay=0.0)
+    kv_optimzer = torch.optim.AdamW(kvs.values(), lr=kv_scheduler.learn_rate, weight_decay=0.0, eps=1e-5)
     if shared.opts.save_optimizer_state:
         optimizer_state_dict = None
         if os.path.exists(filename + '.optim'):
@@ -161,7 +159,8 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
                 # works as a drop_last=True for gradient accumulation
                 if j == max_steps_per_epoch:
                     break
-                # scheduler.apply(optimizer, embedding.step)
+                scheduler.apply(optimizer, embedding.step)
+                kv_scheduler.apply(kv_optimzer, embedding.step)
                 if scheduler.finished:
                     break
                 if shared.state.interrupted:
@@ -196,10 +195,12 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
                     clip_grad(embedding.vec, clip_grad_sched.learn_rate)
 
                 scaler.step(optimizer)
+                scaler.step(kv_optimzer)
                 scaler.update()
                 embedding.step += 1
                 pbar.update()
                 optimizer.zero_grad(set_to_none=True)
+                kv_optimzer.zero_grad(set_to_none=True)
                 loss_step = _loss_step
                 _loss_step = 0
 
@@ -221,7 +222,8 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
 
                 write_loss(log_directory, "textual_inversion_loss.csv", embedding.step, steps_per_epoch, {
                     "loss": f"{loss_step:.7f}",
-                    "learn_rate": scheduler.learn_rate
+                    "learn_rate": scheduler.learn_rate,
+                    "kv_learn_rate": kv_scheduler.learn_rate,
                 })
 
                 if images_dir is not None and steps_done % create_image_every == 0:
