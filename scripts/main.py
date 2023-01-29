@@ -7,65 +7,16 @@ from modules.ui_components import FormRow
 import modules.sd_models as sd_models
 import glob
 import os
-from modules import shared, sd_hijack
+from modules import shared, sd_hijack, extra_networks, ui_extra_networks
 from modules.textual_inversion import textual_inversion
 from modules.call_queue import wrap_gradio_gpu_call
 from safetensors import safe_open
 import cd_modules
 import torch
-from math import prod
 import modules
 import cd_modules.custom_diffusion
-import json
-
-deltas = {}
-backup = {}
-
-
-def list_deltas():
-    res = {}
-    for filename in sorted(
-        glob.iglob(
-            os.path.join(models_path, "deltas", "**/*.safetensors"), recursive=True
-        )
-    ):
-        name = os.path.splitext(os.path.basename(filename))[0]
-        if name != "None":
-            res[name + f"({sd_models.model_hash(filename)})"] = filename
-    return res
-
-
-last_model_hash, last_delta_name = None, None
-
-
-def apply(delta_name, model):
-    global backup, last_model_hash, last_delta_name
-    if (last_model_hash, last_delta_name) == (model.sd_model_hash, delta_name):
-        return
-    if last_model_hash != model.sd_model_hash:
-        backup = {}
-    if delta_name != 'None':
-        st = safe_open(deltas[delta_name], 'pt')
-        metadata = json.loads(st.metadata()['json'])
-        print(metadata['meta'])
-        entries = metadata['entries']
-        print(f"loaded weights {delta_name} ({sum(prod(st.get_tensor(k).shape) for k in st.keys())} params in {len(entries)} entries)")
-    else:
-        entries = {}
-    
-    for k, v in model.named_parameters():
-        if k in entries and k not in backup:
-            backup[k] = v.detach().clone()
-        if k in entries:
-            with torch.no_grad():
-                v[:] = st.get_tensor(k).to(model.device) + backup[k]
-            print(f"loaded {k} from {delta_name}")
-        elif k in backup:
-            with torch.no_grad():
-                v[:] = backup[k]
-            del backup[k]
-            print(f"restored {k}")
-    last_model_hash, last_delta_name = model.sd_model_hash, delta_name
+import cd_modules.ui_extra_networks_deltas
+import cd_modules.extra_networks_deltas
 
 
 class Script(scripts.Script):
@@ -73,29 +24,22 @@ class Script(scripts.Script):
         return "Custom Diffusion"
 
     def show(self, is_img2img):
-        return scripts.AlwaysVisible
+        return False
 
-    def ui(self, is_img2img):
-        with gr.Row():
-            delta_name = gr.Dropdown(
-                ["None", *deltas.keys()], label="Tuned weights", value="None"
-            )
+# monkeypatch initialize's as there's currently no API to register new networks
+ui_extra_networks_initialize_bak = ui_extra_networks.intialize
+def ui_extra_networks_initialize_patched():
+    ui_extra_networks_initialize_bak()
+    ui_extra_networks.register_page(cd_modules.ui_extra_networks_deltas.ExtraNetworksPageDeltas())
+    print('patched in extra network ui page: deltas')
+ui_extra_networks.intialize = ui_extra_networks_initialize_patched
 
-            def refresh():
-                global deltas
-                deltas = list_deltas()
-
-            refresh()
-            refresh = create_refresh_button(
-                delta_name,
-                refresh,
-                (lambda: dict(choices=["None", *deltas.keys()])),
-                "plug_refresh",
-            )
-        return [delta_name, refresh]
-
-    def process(self, p, delta_name, _refresh):
-        apply(delta_name, p.sd_model)
+extra_networks_initialize_bak = extra_networks.initialize
+def extra_networks_initialize_patched():
+    extra_networks_initialize_bak()
+    extra_networks.register_extra_network(cd_modules.extra_networks_deltas.ExtraNetworkDelta())
+    print('patched in extra network: deltas')
+extra_networks.initialize = extra_networks_initialize_patched
 
 
 def get_textual_inversion_template_names():
