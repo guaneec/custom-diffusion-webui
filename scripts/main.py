@@ -196,7 +196,7 @@ def train_tabs_callback(ui_train_tab_params):
             minimum=0,
             maximum=1,
             step=0.01,
-            label="Low-rank approximation sum threshold (0 to disable)",
+            label="Low-rank approximation sum threshold (lower value means smaller file size, 1 to disable)",
             value=0.5,
             elem_id="train_top_sum",
         )

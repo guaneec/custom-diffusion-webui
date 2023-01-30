@@ -156,7 +156,7 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
     is_training_inpainting_model = shared.sd_model.model.conditioning_key in {'hybrid', 'concat'}
     img_c = None
 
-    _save_deltas = lambda *args: save_deltas(*args, *([] if top_sum == 0 else ['delta_factors', top_sum]))
+    _save_deltas = lambda *args: save_deltas(*args, *([] if top_sum == 1 else ['delta_factors', top_sum]))
 
     pbar = tqdm.tqdm(total=steps - initial_step)
     try:
