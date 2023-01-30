@@ -2,7 +2,7 @@ import modules.scripts as scripts
 import gradio as gr
 from modules.ui import create_refresh_button
 from modules.paths import models_path
-from modules.script_callbacks import on_ui_train_tabs
+from modules.script_callbacks import on_ui_train_tabs, on_ui_tabs
 from modules.ui_components import FormRow
 import modules.sd_models as sd_models
 import glob
@@ -17,6 +17,7 @@ import modules
 import cd_modules.custom_diffusion
 import cd_modules.ui_extra_networks_deltas
 import cd_modules.extra_networks_deltas
+import cd_modules.deltas
 
 
 class Script(scripts.Script):
@@ -258,3 +259,70 @@ def train_tabs_callback(ui_train_tab_params):
 
 
 on_ui_train_tabs(train_tabs_callback)
+
+def btn_compress_click(delta_name, top_sum, custom_name):
+    if not delta_name:
+        return "Error: delta not selected"
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+    from cd_modules.compression import decompose
+    import json
+    from pathlib import Path
+    orig_path = cd_modules.deltas.deltas[delta_name]
+    st = safe_open(orig_path, 'pt')
+    metadata = json.loads(st.metadata()['json'])
+    entries = metadata['entries']
+    tensors = {}
+    for k, v in entries.items():
+        if v == 'delta':
+            d = st.get_tensor(k)
+        elif v == 'delta_factors':
+            print('Warning: compressing already factored delta')
+            d = st.get_tensor(k+'.US').float() @ st.get_tensor(k+'.Vh').float()
+        else:
+            return 'Error: Unknown format: {v}'
+        tensors[k+'.US'], tensors[k+'.Vh'] =  map(lambda a: a.half().contiguous(),
+            decompose(d, top_sum))
+    metadata = {'meta': {'version': '0.2.0'}, 'entries': {k: 'delta_factors' for k in entries}}
+    p = Path(orig_path)
+    new_path = str(p.parent / ((custom_name or p.stem + f'.lora{int(100 * top_sum)}') + p.suffix))
+    save_file(tensors, new_path, {'json': json.dumps(metadata)})
+    return f'Compressed delta saved to {new_path}'
+
+
+def ui_tabs_callback():
+    with gr.Blocks() as cd:
+        with gr.Row().style(equal_height=False):
+            with gr.Column(variant='compact'):
+                with gr.Blocks():
+                    with gr.Tab("Compress"):
+                        with gr.Row():
+                            delta_name = gr.Dropdown(
+                                list(cd_modules.deltas.deltas.keys()), label="Delta"
+                            )
+                            create_refresh_button(delta_name, cd_modules.deltas.refresh, 
+                            lambda: dict(choices=list(cd_modules.deltas.deltas.keys())), 'refresh_deltas')
+                        top_sum = gr.Slider(
+                            minimum=0,
+                            maximum=1,
+                            step=0.01,
+                            label="Low-rank approximation sum threshold (lower value means smaller file size, 1 to disable)",
+                            value=0.5,
+                            elem_id="train_top_sum",
+                        )
+                        custom_name = gr.Textbox(label="Custom Name (Optional)")
+                        btn_compress = gr.Button(
+                            value="Compress",
+                            variant="primary",
+                            elem_id="btn_compress",
+                        )
+                    with gr.Tab("Merge"):
+                        gr.Markdown("Coming soon")
+            with gr.Column(variant='compact'):
+                cd_out = gr.Markdown()
+        btn_compress.click(btn_compress_click, [delta_name, top_sum, custom_name], [cd_out])
+    
+    return [(cd, 'Custom Diffusion Utils', 'cdblock')]
+        
+
+on_ui_tabs(ui_tabs_callback)
