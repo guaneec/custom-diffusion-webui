@@ -21,7 +21,7 @@ The trained deltas will be under `models/deltas` (`--deltas-dir`); you can also 
 - [x] Separate lr for embedding and model weights
 - [x] Blending (simple linear combination of deltas)
 - [ ] Merging (optimization based from paper)
-- [ ] Compression
+- [x] Compression
 - [ ] Let users choose what weights to finetune
 - [ ] Regularization
 - [ ] Multi-concept training
