@@ -29,7 +29,13 @@ class ExtraNetworkDelta(extra_networks.ExtraNetwork):
                 if k not in self.backup:
                     self.backup[k] = v.detach().clone()
                 with torch.no_grad():
-                    v[:] = v.detach() + st.get_tensor(k).to(model.device) * strength
+                    if entries[k] == 'delta':
+                        d = st.get_tensor(k)
+                    elif entries[k] == 'delta_factors':
+                        d = st.get_tensor(k+'.US').float() @ st.get_tensor(k+'.Vh').float()
+                    else:
+                        raise ValueError(f'Unknown format: {entries[k]}')
+                    v[:] = v.detach() + d.to(model.device) * strength
 
 
     def deactivate(self, p):
