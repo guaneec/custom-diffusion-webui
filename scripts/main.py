@@ -192,6 +192,15 @@ def train_tabs_callback(ui_train_tab_params):
             elem_id="train_latent_sampling_method",
         )
 
+        top_sum = gr.Slider(
+            minimum=0,
+            maximum=1,
+            step=0.01,
+            label="Low-rank approximation sum threshold (0 to disable)",
+            value=0.5,
+            elem_id="train_top_sum",
+        )
+
         with gr.Row():
             train_embedding = gr.Button(
                 value="Train Embedding",
@@ -232,6 +241,7 @@ def train_tabs_callback(ui_train_tab_params):
             save_image_with_stored_embedding,
             preview_from_txt2img,
             kv_learn_rate,
+            top_sum,
             *ui_train_tab_params.txt2img_preview_params,
         ],
         outputs=[
