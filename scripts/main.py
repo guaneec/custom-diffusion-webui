@@ -268,7 +268,7 @@ def btn_compress_click(delta_name, top_sum, custom_name):
     from cd_modules.compression import decompose
     import json
     from pathlib import Path
-    orig_path = cd_modules.deltas.deltas[delta_name]
+    orig_path = cd_modules.deltas.Delta.deltas[delta_name]
     st = safe_open(orig_path, 'pt')
     metadata = json.loads(st.metadata()['json'])
     entries = metadata['entries']
@@ -298,10 +298,10 @@ def ui_tabs_callback():
                     with gr.Tab("Compress"):
                         with gr.Row():
                             delta_name = gr.Dropdown(
-                                list(cd_modules.deltas.deltas.keys()), label="Delta"
+                                list(cd_modules.deltas.Delta.deltas.keys()), label="Delta"
                             )
-                            create_refresh_button(delta_name, cd_modules.deltas.refresh, 
-                            lambda: dict(choices=list(cd_modules.deltas.deltas.keys())), 'refresh_deltas')
+                            create_refresh_button(delta_name, cd_modules.deltas.Delta.refresh, 
+                            lambda: dict(choices=list(cd_modules.deltas.Delta.deltas.keys())), 'refresh_deltas')
                         top_sum = gr.Slider(
                             minimum=0,
                             maximum=1,

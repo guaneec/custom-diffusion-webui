@@ -1,8 +1,4 @@
-from modules import extra_networks
-from safetensors import safe_open
-import torch
-from math import prod
-import json
+from modules import extra_networks, sd_hijack
 from cd_modules import deltas
 
 # Swapping in and out weights for every Processing
@@ -14,34 +10,15 @@ class ExtraNetworkDelta(extra_networks.ExtraNetwork):
 
 
     def activate(self, p, params_list):
-        model = p.sd_model
-        deltas.refresh()
+        deltas.Delta.refresh()
         for params in params_list:
             params.items[1:] = params.items[1:] or [1]
             delta_name, strength = params.items
             strength = float(strength)
-            st = safe_open(deltas.deltas[delta_name], 'pt')
-            metadata = json.loads(st.metadata()['json'])
-            entries = metadata['entries']
-            for k, v in model.named_parameters():
-                if k not in entries:
-                    continue
-                if k not in self.backup:
-                    self.backup[k] = v.detach().clone()
-                with torch.no_grad():
-                    if entries[k] == 'delta':
-                        d = st.get_tensor(k)
-                    elif entries[k] == 'delta_factors':
-                        d = st.get_tensor(k+'.US').float() @ st.get_tensor(k+'.Vh').float()
-                    else:
-                        raise ValueError(f'Unknown format: {entries[k]}')
-                    v[:] = v.detach() + d.to(v.device) * strength
+            delta = deltas.Delta(path=deltas.Delta.deltas[delta_name])
+            delta.apply(strength, p.sd_model, self.backup)
 
 
     def deactivate(self, p):
-        model = p.sd_model
-        with torch.no_grad():
-            for k, v in model.named_parameters():
-                if k in self.backup:
-                    v[:] = self.backup[k]
+        deltas.Delta.restore(p.sd_model, self.backup)
         self.backup = {}

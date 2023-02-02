@@ -9,10 +9,10 @@ class ExtraNetworksPageDeltas(ui_extra_networks.ExtraNetworksPage):
         super().__init__('Deltas')
 
     def refresh(self):
-        deltas.refresh()
+        deltas.Delta.refresh()
 
     def list_items(self):
-        for name, path in deltas.deltas.items():
+        for name, path in deltas.Delta.deltas.items():
             path, ext = os.path.splitext(path)
             previews = [path + ".png", path + ".preview.png"]
 
