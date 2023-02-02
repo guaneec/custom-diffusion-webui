@@ -35,7 +35,7 @@ class ExtraNetworkDelta(extra_networks.ExtraNetwork):
                         d = st.get_tensor(k+'.US').float() @ st.get_tensor(k+'.Vh').float()
                     else:
                         raise ValueError(f'Unknown format: {entries[k]}')
-                    v[:] = v.detach() + d.to(model.device) * strength
+                    v[:] = v.detach() + d.to(v.device) * strength
 
 
     def deactivate(self, p):
