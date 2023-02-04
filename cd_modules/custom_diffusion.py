@@ -22,7 +22,7 @@ Embedding saved to {html.escape(filename)}
         if not apply_optimizations:
             sd_hijack.apply_optimizations()
 
-def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_step, data_root, log_directory, training_width, training_height, varsize, steps, clip_grad_mode, clip_grad_value, shuffle_tags, tag_drop_out, latent_sampling_method, create_image_every, save_embedding_every, template_filename, save_image_with_stored_embedding, preview_from_txt2img, kv_learn_rate, top_sum, preview_prompt, preview_negative_prompt, preview_steps, preview_sampler_index, preview_cfg_scale, preview_seed, preview_width, preview_height):
+def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_step, data_root, reg_root, prior_loss_weight, log_directory, training_width, training_height, varsize, steps, clip_grad_mode, clip_grad_value, shuffle_tags, tag_drop_out, latent_sampling_method, create_image_every, save_embedding_every, template_filename, save_image_with_stored_embedding, preview_from_txt2img, kv_learn_rate, top_sum, preview_prompt, preview_negative_prompt, preview_steps, preview_sampler_index, preview_cfg_scale, preview_seed, preview_width, preview_height):
     save_embedding_every = save_embedding_every or 0
     create_image_every = create_image_every or 0
     template_file = textual_inversion_templates.get(template_filename, None)
@@ -85,6 +85,13 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
     pin_memory = shared.opts.pin_memory
 
     ds = modules.textual_inversion.dataset.PersonalizedBase(data_root=data_root, width=training_width, height=training_height, repeats=shared.opts.training_image_repeats_per_epoch, placeholder_token=embedding_name, model=shared.sd_model, cond_model=shared.sd_model.cond_stage_model, device=devices.device, template_file=template_file, batch_size=batch_size, gradient_step=gradient_step, shuffle_tags=shuffle_tags, tag_drop_out=tag_drop_out, latent_sampling_method=latent_sampling_method, varsize=varsize)
+    ds_reg = None
+    if reg_root:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, 'tmp.txt'), 'w') as f:
+                f.write('[filewords]')
+            ds_reg = modules.textual_inversion.dataset.PersonalizedBase(data_root=reg_root, width=training_width, height=training_height, repeats=shared.opts.training_image_repeats_per_epoch, placeholder_token='', model=shared.sd_model, cond_model=shared.sd_model.cond_stage_model, device=devices.device, template_file=f.name, batch_size=batch_size, gradient_step=gradient_step, shuffle_tags=shuffle_tags, tag_drop_out=tag_drop_out, latent_sampling_method=latent_sampling_method, varsize=varsize)
 
     if shared.opts.save_training_settings_to_txt:
         save_settings_to_file(log_directory, {**dict(model_name=checkpoint.model_name, model_hash=checkpoint.shorthash, num_of_dataset_images=len(ds), num_vectors_per_token=len(embedding.vec)), **locals()})
@@ -92,6 +99,9 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
     latent_sampling_method = ds.latent_sampling_method
 
     dl = modules.textual_inversion.dataset.PersonalizedDataLoader(ds, latent_sampling_method=latent_sampling_method, batch_size=ds.batch_size, pin_memory=pin_memory)
+    dl_reg = ds_reg and modules.textual_inversion.dataset.PersonalizedDataLoader(ds_reg, latent_sampling_method=latent_sampling_method, batch_size=ds_reg.batch_size, pin_memory=pin_memory)
+    from itertools import chain, count
+    reg_batch_iter = dl_reg and chain.from_iterable(dl_reg for _ in count())
 
     if unload:
         shared.parallel_processing_allowed = False
@@ -166,19 +176,23 @@ def _train_embedding(id_task, embedding_name, learn_rate, batch_size, gradient_s
                     clip_grad_sched.step(embedding.step)
             
                 with devices.autocast():
-                    x = batch.latent_sample.to(devices.device, non_blocking=pin_memory)
-                    c = shared.sd_model.cond_stage_model(batch.cond_text)
+                    def get_loss(batch):
+                        x = batch.latent_sample.to(devices.device, non_blocking=pin_memory)
+                        c = shared.sd_model.cond_stage_model(batch.cond_text)
 
-                    if is_training_inpainting_model:
-                        if img_c is None:
-                            img_c = processing.txt2img_image_conditioning(shared.sd_model, c, training_width, training_height)
+                        if is_training_inpainting_model:
+                            if img_c is None:
+                                img_c = processing.txt2img_image_conditioning(shared.sd_model, c, training_width, training_height)
 
-                        cond = {"c_concat": [img_c], "c_crossattn": [c]}
-                    else:
-                        cond = c
+                            cond = {"c_concat": [img_c], "c_crossattn": [c]}
+                        else:
+                            cond = c
 
-                    loss = shared.sd_model(x, cond)[0] / gradient_step
-                    del x
+                        return shared.sd_model(x, cond)[0] / gradient_step
+                    
+                    loss = get_loss(batch)
+                    if reg_batch_iter:
+                        loss += get_loss(next(reg_batch_iter)) * prior_loss_weight
 
                     _loss_step += loss.item()
                 scaler.scale(loss).backward()

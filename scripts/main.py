@@ -103,6 +103,17 @@ def train_tabs_callback(ui_train_tab_params):
             placeholder="Path to directory with input images",
             elem_id="train_dataset_directory",
         )
+        with FormRow():
+            reg_dataset_directory = gr.Textbox(
+                label="Regularization dataset directory (optional)",
+                placeholder="Path to directory reg images",
+            )
+            prior_loss_weight = gr.Slider(
+                label="Prior-preservation loss weight",
+                value=1.,
+                minimum=0.,
+                maximum=10.,
+            )
         log_directory = gr.Textbox(
             label="Log directory",
             placeholder="Path to directory where to write outputs",
@@ -226,6 +237,8 @@ def train_tabs_callback(ui_train_tab_params):
             batch_size,
             gradient_step,
             dataset_directory,
+            reg_dataset_directory,
+            prior_loss_weight,
             log_directory,
             training_width,
             training_height,
