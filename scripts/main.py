@@ -356,9 +356,10 @@ def ui_tabs_callback():
                         btn_make_reg = gr.Button(value="Generate images", variant="primary")
 
             with gr.Column(variant='compact'):
-                cd_out = gr.Markdown()
-        btn_compress.click(wrap_gradio_gpu_call(btn_compress_click, extra_outputs=[gr.update()]), [delta_name, top_sum, custom_name], [cd_out])
-        btn_make_reg.click(wrap_gradio_gpu_call(cli_scripts.make_reg.make_reg_images, extra_outputs=[gr.update()]), [data_root, n_images, output_path, template_file, shuffle_tags, placeholder_token], [cd_out])
+                cd_output = gr.Text(show_label=False)
+                cd_outcome = gr.HTML()
+        btn_compress.click(btn_compress_click, [delta_name, top_sum, custom_name], [cd_output])
+        btn_make_reg.click(wrap_gradio_gpu_call(cli_scripts.make_reg.make_reg_images, extra_outputs=[gr.update()]), [data_root, n_images, output_path, template_file, shuffle_tags, placeholder_token], [cd_output, cd_outcome])
     
     return [(cd, 'Custom Diffusion Utils', 'cdblock')]
         

@@ -132,7 +132,7 @@ def make_reg_images(
         with open(Path(output_path) / f"{stem}.txt", "w") as f:
             f.write(prompt)
     print("done")
-    return f"{len(params)} images saved to {output_path}"
+    return f"{len(params)} images saved to {output_path}", ""
 
 
 if __name__ == "__main__":
