@@ -1,8 +1,7 @@
 import sys
+from pathlib import Path
 
 if __name__ == "__main__":
-    from pathlib import Path
-
     sys.path.extend(str(Path(__file__).parent / x) for x in ["../", "../../../"])
     argv = [*sys.argv]
     sys.argv = ["webui.py", "--disable-console-progressbars"]
@@ -78,13 +77,12 @@ def _get_gen_params(
 
 
 def make_reg_images(
-    *,
     data_root: str,
     n_images: str,
     output_path: str,
-    placeholder_token: str = "",
     template_file: str,
     shuffle_tags: bool,
+    placeholder_token: str = "",
 ):
     """Generate regularization images
 
@@ -93,10 +91,19 @@ def make_reg_images(
         n_images: Total number of images, rounded up to the next multiple of the
           dataset size. Supply "Nx" for N times the original dataset size.
         output_path: Destination of the generated images.
-        placeholder_token: String to replace [name] in templates
         template_file: Texual inversion template file
         shuffle_tags: Shuffle comma-delimitted tags
+        placeholder_token: String to replace [name] with in templates
     """
+    assert (
+        data_root and n_images and output_path and template_file
+    ), "Missing required input(s)"
+    if "/" not in template_file and "\\" not in template_file:
+        from modules.textual_inversion.textual_inversion import (
+            textual_inversion_templates,
+        )
+
+        template_file = textual_inversion_templates.get(template_file, None).path
     params = _get_gen_params(
         data_root=data_root,
         placeholder_token=placeholder_token,
@@ -125,6 +132,7 @@ def make_reg_images(
         with open(Path(output_path) / f"{stem}.txt", "w") as f:
             f.write(prompt)
     print("done")
+    return f"{len(params)} images saved to {output_path}"
 
 
 if __name__ == "__main__":

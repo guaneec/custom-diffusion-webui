@@ -18,6 +18,7 @@ import cd_modules.custom_diffusion
 import cd_modules.ui_extra_networks_deltas
 import cd_modules.extra_networks_deltas
 import cd_modules.deltas
+import cli_scripts.make_reg
 
 
 class Script(scripts.Script):
@@ -331,9 +332,33 @@ def ui_tabs_callback():
                         )
                     with gr.Tab("Merge"):
                         gr.Markdown("Coming soon")
+                    with gr.Tab("Make regularization images"):
+                        with FormRow():
+                            data_root = gr.Textbox(label="Dataset root")
+                            output_path = gr.Textbox(label="Destination of the generated images")
+                        n_images = gr.Textbox(label='Total number of images. Will be rounded up to the next multiple of the dataset size', placeholder='A number or "Nx" for N times the original dataset size.')
+                        shuffle_tags = gr.Checkbox(label="Shuffle comma-delimitted tags")
+
+                        with FormRow():
+                            template_file = gr.Dropdown(
+                                label="Prompt template",
+                                value="style_filewords.txt",
+                                elem_id="train_template_file2",
+                                choices=get_textual_inversion_template_names(),
+                            )
+                            create_refresh_button(
+                                template_file,
+                                textual_inversion.list_textual_inversion_templates,
+                                lambda: {"choices": get_textual_inversion_template_names()},
+                                "refrsh_train_template_file2",
+                            )
+                        placeholder_token = gr.Textbox(label="String to replace [name] with in templates")
+                        btn_make_reg = gr.Button(value="Generate images", variant="primary")
+
             with gr.Column(variant='compact'):
                 cd_out = gr.Markdown()
         btn_compress.click(btn_compress_click, [delta_name, top_sum, custom_name], [cd_out])
+        btn_make_reg.click(cli_scripts.make_reg.make_reg_images, [data_root, n_images, output_path, template_file, shuffle_tags, placeholder_token], [cd_out])
     
     return [(cd, 'Custom Diffusion Utils', 'cdblock')]
         
