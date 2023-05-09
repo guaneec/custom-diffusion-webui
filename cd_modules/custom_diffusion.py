@@ -1,4 +1,26 @@
 from modules.textual_inversion.textual_inversion import *
+
+import os
+import sys
+import traceback
+import datetime
+
+import torch
+import tqdm
+import html
+import safetensors.torch
+
+import numpy as np
+from PIL import PngImagePlugin
+from torch.utils.tensorboard import SummaryWriter
+
+from modules import shared, devices, sd_hijack, processing, sd_models, images, sd_samplers, sd_hijack_checkpoint, errors
+import modules.textual_inversion.dataset
+from modules.textual_inversion.learn_schedule import LearnRateScheduler
+
+from modules.textual_inversion.image_embedding import embedding_to_b64, embedding_from_b64, insert_image_data_embed, extract_image_data_embed, caption_image_overlay
+from modules.textual_inversion.logging import save_settings_to_file
+
 from cd_modules.deltas import Delta
 
 def train_embedding(*args):
