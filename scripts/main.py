@@ -29,12 +29,12 @@ class Script(scripts.Script):
         return False
 
 # monkeypatch initialize's as there's currently no API to register new networks
-ui_extra_networks_initialize_bak = ui_extra_networks.intialize
+ui_extra_networks_initialize_bak = ui_extra_networks.initialize
 def ui_extra_networks_initialize_patched():
     ui_extra_networks_initialize_bak()
     ui_extra_networks.register_page(cd_modules.ui_extra_networks_deltas.ExtraNetworksPageDeltas())
     print('patched in extra network ui page: deltas')
-ui_extra_networks.intialize = ui_extra_networks_initialize_patched
+ui_extra_networks.initialize = ui_extra_networks_initialize_patched
 
 extra_networks_initialize_bak = extra_networks.initialize
 def extra_networks_initialize_patched():
